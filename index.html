@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Frame Player</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #222;
+            color: white;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .player-container {
+            background: #333;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            max-width: 800px;
+            width: 100%;
+        }
+
+        .image-container {
+            position: relative;
+            width: 100%;
+            height: 400px;
+            background: #111;
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: grab;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .image-container:active {
+            cursor: grabbing;
+        }
+
+        .frame-image {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            user-select: none; /* Prevent image selection while scrubbing */
+            -webkit-user-drag: none; /* Prevent image drag */
+        }
+
+        .placeholder {
+            color: #666;
+            font-size: 18px;
+            text-align: center;
+        }
+
+        .controls {
+            margin-top: 15px;
+            display: flex;
+            justify-content: flex-end; /* Align info to the right */
+            align-items: center;
+        }
+
+        .frame-info {
+            font-size: 14px;
+            color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <div class="player-container">
+        <div class="image-container" id="imageContainer">
+            <div class="placeholder">Loading frames...</div>
+        </div>
+        
+        <div class="controls">
+            <div class="frame-info" id="frameInfo">No frames loaded</div>
+        </div>
+    </div>
+
+    <script>
+        // --- Configuration ---
+        // IMPORTANT: Set the path to your first image and the total number of frames.
+        // The script assumes a sequential naming convention (e.g., frame_001.png, frame_002.png).
+        // The number in the filename will be incremented.
+        const firstImage = "PLACEHOLDERimages/frame_001.png"; // Path to the FIRST image in the sequence.
+        const totalFrames = 10; // The TOTAL number of frames in your sequence.
+        // --- End Configuration ---
+
+
+        class ImagePlayer {
+            constructor() {
+                this.frames = [];
+                this.currentFrame = 0;
+                this.lastMoveTime = 0;
+
+                this.imageContainer = document.getElementById('imageContainer');
+                this.frameInfo = document.getElementById('frameInfo');
+
+                this.loadImages();
+                this.setupEventListeners();
+            }
+
+            setupEventListeners() {
+                this.imageContainer.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+                
+                // Prevent context menu on the image
+                this.imageContainer.addEventListener('contextmenu', (e) => e.preventDefault());
+            }
+
+            loadImages() {
+                this.frames = this.generateFramePaths(firstImage, totalFrames);
+                this.currentFrame = 0;
+
+                if (this.frames.length > 0) {
+                    this.preloadInitialImage();
+                } else {
+                    this.frameInfo.textContent = "Configuration Error.";
+                    const placeholder = this.imageContainer.querySelector('.placeholder');
+                    if(placeholder) {
+                        placeholder.textContent = "Could not generate frame paths. Check the 'firstImage' format in the script.";
+                    }
+                }
+            }
+            
+            generateFramePaths(firstImagePath, count) {
+                const generatedFrames = [];
+                // Regex to find the parts of the filename: prefix, number, and extension.
+                const match = firstImagePath.match(/(.*?)(\d+)(\.[^.]+)$/);
+
+                if (!match) {
+                    console.error("Filename format error: Could not parse the first image filename. It must contain a number (e.g., 'frame_001.png').");
+                    return []; // Return empty if format is wrong
+                }
+
+                const prefix = match[1]; // e.g., "images/frame_"
+                const numberStr = match[2]; // e.g., "001"
+                const extension = match[3]; // e.g., ".png"
+                
+                const initialNumber = parseInt(numberStr, 10);
+                const padding = numberStr.length; // The number of digits, e.g., 3 for "001"
+
+                for (let i = 0; i < count; i++) {
+                    const currentNumber = initialNumber + i;
+                    // Pad the number with leading zeros to match the original format
+                    const paddedNumber = String(currentNumber).padStart(padding, '0');
+                    const path = `${prefix}${paddedNumber}${extension}`;
+                    generatedFrames.push(path);
+                }
+
+                return generatedFrames;
+            }
+
+            preloadInitialImage() {
+                // Preload the first image to ensure the container has the correct size
+                const img = new Image();
+                img.onload = () => {
+                    this.updateDisplay();
+                };
+                img.onerror = () => {
+                     this.frameInfo.textContent = "Error loading first image.";
+                     const placeholder = this.imageContainer.querySelector('.placeholder');
+                     if(placeholder) {
+                        placeholder.textContent = `Failed to load: ${this.frames[0]}. Check path and file location.`;
+                    }
+                }
+                img.src = this.frames[0];
+            }
+
+            handleMouseMove(event) {
+                if (this.frames.length === 0) return;
+
+                const rect = this.imageContainer.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                
+                // Calculate frame based on horizontal mouse position
+                const positionRatio = x / rect.width;
+                const targetFrame = Math.floor(positionRatio * this.frames.length);
+                
+                // Clamp to valid range [0, frames.length - 1]
+                const newFrame = Math.max(0, Math.min(this.frames.length - 1, targetFrame));
+                
+                if (newFrame !== this.currentFrame) {
+                    this.currentFrame = newFrame;
+                    this.updateDisplay();
+                }
+            }
+
+            updateDisplay() {
+                if (this.frames.length === 0) return;
+
+                // Find the image element. If it doesn't exist, create it.
+                let img = this.imageContainer.querySelector('.frame-image');
+                if (!img) {
+                    img = document.createElement('img');
+                    img.className = 'frame-image';
+                    this.imageContainer.innerHTML = ''; // Clear placeholder text
+                    this.imageContainer.appendChild(img);
+                }
+                
+                img.src = this.frames[this.currentFrame];
+                img.alt = `Frame ${this.currentFrame + 1}`;
+                this.frameInfo.textContent = `Frame ${this.currentFrame + 1} of ${this.frames.length}`;
+            }
+        }
+
+        // Initialize the player when the page has loaded
+        window.addEventListener('DOMContentLoaded', () => {
+            new ImagePlayer();
+        });
+    </script>
+</body>
+</html>
